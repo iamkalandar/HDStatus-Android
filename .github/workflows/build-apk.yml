@@ -21,7 +21,7 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Set up Gradle 8.9
+      - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
@@ -38,20 +38,57 @@ jobs:
           yes | "$SDKMANAGER" --licenses || true
           "$SDKMANAGER" "platform-tools" "platforms;android-35" "build-tools;35.0.0"
 
-      - name: Extract project archive
+      - name: Find and extract project ZIP
+        shell: bash
         run: |
           set -e
-          test -f HDStatusFreshProject.zip
-          unzip -oq HDStatusFreshProject.zip
-          test -f HDStatusFresh/settings.gradle.kts
-          test -f HDStatusFresh/app/build.gradle.kts
+          ARCHIVE="$(find . -type f -iname '*.zip' -not -path './.git/*' | head -n 1)"
+
+          if [ -z "$ARCHIVE" ]; then
+            echo "ERROR: No ZIP file found in the repository."
+            echo "Upload the HD Status project ZIP to the repository root."
+            exit 1
+          fi
+
+          echo "Using archive: $ARCHIVE"
+          mkdir -p extracted
+          unzip -oq "$ARCHIVE" -d extracted
+
+          SETTINGS_FILE="$(find extracted -type f -name settings.gradle.kts | head -n 1)"
+
+          if [ -z "$SETTINGS_FILE" ]; then
+            echo "ERROR: ZIP does not contain settings.gradle.kts."
+            find extracted -maxdepth 4 -type f
+            exit 1
+          fi
+
+          PROJECT_DIR="$(dirname "$SETTINGS_FILE")"
+
+          if [ ! -f "$PROJECT_DIR/app/build.gradle.kts" ]; then
+            echo "ERROR: Android app Gradle file was not found in $PROJECT_DIR."
+            exit 1
+          fi
+
+          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
+          echo "Found Android project: $PROJECT_DIR"
 
       - name: Build debug APK
-        run: gradle -p HDStatusFresh assembleDebug
+        run: gradle -p "$PROJECT_DIR" assembleDebug
+
+      - name: Prepare APK artifact
+        shell: bash
+        run: |
+          set -e
+          APK="$(find "$PROJECT_DIR/app/build/outputs/apk/debug" -type f -name '*.apk' | head -n 1)"
+          if [ -z "$APK" ]; then
+            echo "ERROR: APK was not generated."
+            exit 1
+          fi
+          cp "$APK" app-debug.apk
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: HD-Status-debug-apk
-          path: HDStatusFresh/app/build/outputs/apk/debug/app-debug.apk
+          path: app-debug.apk
           if-no-files-found: error
