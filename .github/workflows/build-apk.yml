@@ -1,3 +1,4 @@
+
 name: Build HD Status APK
 
 on:
@@ -15,27 +16,37 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Set up Java 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '17'
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
+      - name: Set up Gradle 8.9
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
 
-      - name: Install Android SDK 35
-        run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
+      - name: Install Android SDK packages
+        shell: bash
+        run: |
+          set -e
+          SDKMANAGER="$(find "$ANDROID_HOME/cmdline-tools" -type f -name sdkmanager | head -n 1)"
+          if [ -z "$SDKMANAGER" ]; then
+            echo "Android SDK manager was not found."
+            exit 1
+          fi
+          yes | "$SDKMANAGER" --licenses || true
+          "$SDKMANAGER" "platform-tools" "platforms;android-35" "build-tools;35.0.0"
 
       - name: Extract project archive
         run: |
-          unzip -q HDStatusFreshProject.zip
+          set -e
+          test -f HDStatusFreshProject.zip
+          unzip -oq HDStatusFreshProject.zip
           test -f HDStatusFresh/settings.gradle.kts
           test -f HDStatusFresh/app/build.gradle.kts
 
       - name: Build debug APK
-        uses: gradle/actions/setup-gradle@v4
-
-      - name: Run Gradle build
         run: gradle -p HDStatusFresh assembleDebug
 
       - name: Upload APK
